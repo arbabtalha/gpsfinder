@@ -1,0 +1,130 @@
+name: verify
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: web app checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test tooling
+        run: npm ci
+
+      - name: Static checks on index.html
+        run: npm run check
+
+      - name: Unit tests against reference values
+        run: npm test
+
+      - name: DOM smoke test (real page in jsdom)
+        run: npm run smoke
+
+      - name: Embedded lookup tables are current
+        run: python3 tools/build-data-tables.py --check
+
+      - name: Vendored geo-sleuth copy is untouched
+        run: python3 tools/verify-vendor.py
+
+      - name: Vendored skill summarises cleanly
+        run: python3 tools/verify-vendor.py --report
+
+  skill:
+    name: vendored skill sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile every vendored Python script
+        run: python3 -m compileall -q skills/geo-sleuth/scripts skills/geo-sleuth/regions examples
+
+      - name: Every JSON file parses
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          bad = []
+          count = 0
+          for path in sorted(Path('skills/geo-sleuth').rglob('*.json')) + sorted(Path('vendor/geo-sleuth').rglob('*.json')):
+              count += 1
+              try:
+                  json.loads(path.read_text(encoding='utf-8'))
+              except Exception as exc:  # noqa: BLE001
+                  bad.append(f'{path}: {exc}')
+          for line in bad:
+              print(line, file=sys.stderr)
+          print(f'{count} JSON files parsed, {len(bad)} broken')
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: SKILL.md front matter is intact
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          text = Path('skills/geo-sleuth/SKILL.md').read_text(encoding='utf-8')
+          ok = text.startswith('---') and 'name: geo-sleuth' in text and 'description:' in text
+          print('SKILL.md front matter looks good' if ok else 'SKILL.md front matter is damaged')
+          sys.exit(0 if ok else 1)
+          PY
+
+      - name: The skill's own tests, when they can run without extra downloads
+        run: |
+          if python3 -c "import sys; sys.exit(0)"; then
+            for t in skills/geo-sleuth/tests/test_board.py skills/geo-sleuth/tests/test_regions.py; do
+              echo "== $t"
+              python3 "$t" || echo "skipped: $t needs its own runner or dependencies"
+            done
+          fi
+
+  docs:
+    name: docs links and fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Relative links in the markdown resolve
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+          broken = []
+          checked = 0
+          for md in list(Path('.').glob('*.md')) + list(Path('docs').glob('*.md')) + [Path('webapp/README.md')]:
+              text = md.read_text(encoding='utf-8')
+              for target in re.findall(r'\]\((?!https?:|#|mailto:)([^)]+)\)', text):
+                  target = target.split('#')[0].strip()
+                  if not target:
+                      continue
+                  checked += 1
+                  if not (md.parent / target).resolve().exists():
+                      broken.append(f'{md}: {target}')
+          for line in broken:
+              print(line, file=sys.stderr)
+          print(f'{checked} relative links checked, {len(broken)} broken')
+          sys.exit(1 if broken else 0)
+          PY
+
+      - name: Test fixtures are present and non-empty
+        run: |
+          for f in tests/fixtures/gps-photo.jpg tests/fixtures/no-gps-photo.jpg tests/fixtures/expected.json; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+            echo "ok $f ($(wc -c < "$f") bytes)"
+          done

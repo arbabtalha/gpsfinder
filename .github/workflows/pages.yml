@@ -1,0 +1,69 @@
+name: publish web app
+
+# Publishes the repository root to GitHub Pages, so index.html is served at
+# https://<owner>.github.io/gpsfinder/. Enable it once per repository:
+#   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install test tooling
+        run: npm ci
+
+      - name: Check the page before publishing it
+        run: |
+          npm run check
+          npm test
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          # the app itself, and the redirect stub
+          cp index.html .nojekyll _site/
+          cp -r webapp _site/webapp
+          # the readable material: docs, the skill, the upstream mirror, the tooling
+          cp -r docs _site/docs
+          cp -r skills _site/skills
+          cp -r vendor _site/vendor
+          cp -r tests _site/tests
+          cp -r tools _site/tools
+          cp README.md LICENSE package.json Makefile install.sh install.ps1 _site/
+          du -sh _site
+          find _site -maxdepth 2 -type d | sort
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
