@@ -1,0 +1,36 @@
+# Node (test tooling only; the web app needs no Node)
+node_modules/
+npm-debug.log*
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# geo-sleuth work directories, if you run the skill scripts inside the repo
+intake/
+rev/
+work/
+*.work/
+evidence.jpg
+sat_top.jpg
+heat.jpg
+m1.jpg
+result.json
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Screenshots and scratch files
+screenshot*.png
+*.local.html
+.tmp/

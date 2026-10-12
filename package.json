@@ -1,0 +1,26 @@
+{
+  "name": "gpsfinder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GPS Finder: a single-file web app (index.html) that reads GPS out of photos, plus a vendored copy of the geo-sleuth Agent Skill. Node is only used for the test tooling; the app itself has no build step and no runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/app.test.mjs",
+    "check": "node tools/check-page.mjs",
+    "smoke": "node tools/dom-smoke.mjs",
+    "fixtures": "python3 tools/make-test-fixtures.py",
+    "data": "python3 tools/build-data-tables.py",
+    "verify": "npm run check && npm run test && npm run smoke"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arbabtalha/gpsfinder.git"
+  }
+}
