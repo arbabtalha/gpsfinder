@@ -1,7 +1,11 @@
 name: publish web app
 
 # Publishes the repository root to GitHub Pages, so index.html is served at
-# https://<owner>.github.io/gpsfinder/. Enable it once per repository:
+# https://<owner>.github.io/gpsfinder/.
+#
+# This repository currently publishes Pages from the main branch, so the site
+# goes live as soon as a commit lands there and this workflow stands down with a
+# notice instead of failing. To publish through Actions instead:
 #   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
 
 on:
@@ -21,23 +25,41 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      build_type: ${{ steps.pages_source.outputs.build_type }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check how this repository publishes Pages
+        id: pages_source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          build_type=$(gh api "repos/${{ github.repository }}/pages" --jq .build_type 2>/dev/null || echo none)
+          echo "build_type=$build_type" >> "$GITHUB_OUTPUT"
+          echo "Pages build type: $build_type"
+          if [ "$build_type" != "workflow" ]; then
+            echo "::notice title=Pages::This repository publishes Pages from a branch ('$build_type'), so the site is rebuilt by GitHub from main without this workflow. Switch Settings -> Pages -> Source to 'GitHub Actions' to publish with this workflow instead."
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.pages_source.outputs.build_type == 'workflow'
         with:
           node-version: 22
           cache: npm
 
       - name: Install test tooling
+        if: steps.pages_source.outputs.build_type == 'workflow'
         run: npm ci
 
       - name: Check the page before publishing it
+        if: steps.pages_source.outputs.build_type == 'workflow'
         run: |
           npm run check
           npm test
 
       - name: Assemble the site
+        if: steps.pages_source.outputs.build_type == 'workflow'
         run: |
           mkdir -p _site
           # the app itself, and the redirect stub
@@ -54,12 +76,15 @@ jobs:
           find _site -maxdepth 2 -type d | sort
 
       - uses: actions/configure-pages@v5
+        if: steps.pages_source.outputs.build_type == 'workflow'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages_source.outputs.build_type == 'workflow'
         with:
           path: _site
 
   deploy:
     needs: build
+    if: needs.build.outputs.build_type == 'workflow'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
