@@ -102,29 +102,48 @@ jobs:
 
       - name: Relative links in the markdown resolve
         run: |
-          python3 - <<'PY'
+          python3 - <<'PYTHON'
           import re, sys
           from pathlib import Path
+
+          FENCE = re.compile(r'```.*?```', re.S)
+          INLINE = re.compile(r'`[^`]*`')
           broken = []
           checked = 0
-          for md in list(Path('.').glob('*.md')) + list(Path('docs').glob('*.md')) + [Path('webapp/README.md')]:
+
+          globs = [Path('.').glob('*.md'), Path('docs').glob('*.md'), [Path('webapp/README.md')]]
+          for pattern in globs:
+              for md in pattern:
+                  text = FENCE.sub('', md.read_text(encoding='utf-8'))
+                  text = INLINE.sub('', text)
+                  for target in re.findall(r'\]\((?!https?:|#|mailto:)([^)]+)\)', text):
+                      target = target.split('#')[0].strip()
+                      if not target:
+                          continue
+                      checked += 1
+                      if not (md.parent / target).resolve().exists():
+                          broken.append(f'{md}: {target}')
+
+          images = 0
+          for md in Path('vendor').rglob('*.md'):
               text = md.read_text(encoding='utf-8')
-              for target in re.findall(r'\]\((?!https?:|#|mailto:)([^)]+)\)', text):
-                  target = target.split('#')[0].strip()
-                  if not target:
+              links = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', text) + re.findall(r'<img[^>]+src="([^"]+)"', text)
+              for target in links:
+                  if target.startswith(('http', 'data:')):
                       continue
-                  checked += 1
+                  images += 1
                   if not (md.parent / target).resolve().exists():
-                      broken.append(f'{md}: {target}')
-          for line in broken:
-              print(line, file=sys.stderr)
-          print(f'{checked} relative links checked, {len(broken)} broken')
+                      broken.append(f'{md}: image {target}')
+
+          print(f'{checked} relative links and {images} vendored images checked')
+          for item in broken:
+              print(f'  broken: {item}')
           sys.exit(1 if broken else 0)
-          PY
+          PYTHON
 
       - name: Test fixtures are present and non-empty
         run: |
-          for f in tests/fixtures/gps-photo.jpg tests/fixtures/no-gps-photo.jpg tests/fixtures/expected.json; do
+          for f in tests/fixtures/*; do
             test -s "$f" || { echo "missing or empty: $f"; exit 1; }
-            echo "ok $f ($(wc -c < "$f") bytes)"
           done
+          echo "fixtures ok: $(ls tests/fixtures | tr '\n' ' ')"
